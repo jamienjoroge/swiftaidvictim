@@ -45,8 +45,19 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.gson.Gson;
+import com.njoroge.jamie.swiftaidvictim.Common.Common;
 import com.njoroge.jamie.swiftaidvictim.Helper.CustomInfoWindow;
+import com.njoroge.jamie.swiftaidvictim.Model.Data;
+import com.njoroge.jamie.swiftaidvictim.Model.FCMResponse;
+import com.njoroge.jamie.swiftaidvictim.Model.Sender;
+import com.njoroge.jamie.swiftaidvictim.Model.Token;
 import com.njoroge.jamie.swiftaidvictim.Model.Victim;
+import com.njoroge.jamie.swiftaidvictim.Remote.IFCMService;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class home extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener,
@@ -64,7 +75,7 @@ public class home extends AppCompatActivity
 
     private LocationRequest mLocationRequest;
     private GoogleApiClient mGoogleApiClient;
-    private Location mLastLocation;
+    private Location mLastLocation  = new Location("jamie");
 
     private static int UPDATE_INTERVAL = 5000;
     private static int FATEST_INTERVAL = 3000;
@@ -86,6 +97,9 @@ public class home extends AppCompatActivity
     int distance = 1; //km
     private static final int LIMIT = 3;
 
+    //Send Alert
+    IFCMService mService;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,7 +108,7 @@ public class home extends AppCompatActivity
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-
+        mService = Common.getFCMService();
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -109,9 +123,9 @@ public class home extends AppCompatActivity
         mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        //Geo Fire
-        ref = FirebaseDatabase.getInstance().getReference("Drivers");
-        geoFire = new GeoFire(ref);
+//        //geofire
+//        ref = FirebaseDatabase.getInstance().getReference(Common.driver_tbl);
+//         geoFire = new GeoFire(ref);
 
 
         //initiate view
@@ -128,7 +142,10 @@ public class home extends AppCompatActivity
         btnPickupRequest.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                requestPickupHere(FirebaseAuth.getInstance().getCurrentUser().getUid());
+                if(!isDriverFound)
+                    requestPickupHere(FirebaseAuth.getInstance().getCurrentUser().getUid());
+                else
+                    sendRequestToDriver(driverId);
             }
         });
 
@@ -136,8 +153,49 @@ public class home extends AppCompatActivity
 
     }
 
+    private void sendRequestToDriver(String driverId) {
+        DatabaseReference tokens = FirebaseDatabase.getInstance().getReference(Common.token_tbl);
+
+        tokens.orderByKey().equalTo(driverId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot dataSnapshot) {
+                        for(DataSnapshot postSnapshot:dataSnapshot.getChildren())
+                        {
+                            Token token = postSnapshot.getValue(Token.class);
+                            //making the payload this converts the LatLng to json
+                            String json_lat_lng = new Gson().toJson(new LatLng(mLastLocation.getLatitude(),mLastLocation.getLongitude()));
+                            Data data = new Data("Jamie", json_lat_lng);//>>sent to ambulance app
+                            Sender content = new Sender(data, token.getToken());//>>sending the data to token
+
+                            mService.sendMessage(sender)
+                                    .enqueue(new Callback<FCMResponse>() {
+                                        @Override
+                                        public void onResponse(Call<FCMResponse> call, Response<FCMResponse> response) {
+                                            if(response.body().success == 1)
+                                                Toast.makeText(home.this, "Request sent!", Toast.LENGTH_SHORT).show();
+                                            else
+                                                Toast.makeText(home.this, "Failed", Toast.LENGTH_SHORT).show();
+                                        }
+
+                                        @Override
+                                        public void onFailure(Call<FCMResponse> call, Throwable t) {
+                                            Log.e("ERROR", t.getMessage());
+
+                                        }
+                                    });
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError databaseError) {
+
+                    }
+                });
+    }
+
     private void requestPickupHere(String uid) {
-        DatabaseReference dbRequest = FirebaseDatabase.getInstance().getReference("PickupRequest");
+        DatabaseReference dbRequest = FirebaseDatabase.getInstance().getReference(Common.request_pickup_tbl);
         GeoFire mGeoFire = new GeoFire(dbRequest);
         mGeoFire.setLocation(uid,new GeoLocation(mLastLocation.getLatitude(),mLastLocation.getLongitude()));
 
@@ -158,7 +216,7 @@ public class home extends AppCompatActivity
     }
 
     private void findDriver() {
-        DatabaseReference Users = FirebaseDatabase.getInstance().getReference("Users");
+        DatabaseReference Users = FirebaseDatabase.getInstance().getReference(Common.driver_tbl);
         GeoFire gfUsers = new GeoFire(Users);
 
         GeoQuery geoQuery = gfUsers.queryAtLocation(new GeoLocation(mLastLocation.getLatitude(),mLastLocation.getLongitude()),
@@ -216,7 +274,6 @@ public class home extends AppCompatActivity
                     {
                         buildGoogleApiClient();
                         createLocationRequest();
-                            displayLocation();
                     }
                 }
         }
@@ -278,17 +335,19 @@ public class home extends AppCompatActivity
     }
 
     private void loadAllAvailableDrivers() {
+        Toast.makeText(home.this, "searching for Ambulance",Toast.LENGTH_LONG).show();
         //LOAD ambulance within 3km radius
-        DatabaseReference driverLocation = FirebaseDatabase.getInstance().getReference("Users");
+        DatabaseReference driverLocation = FirebaseDatabase.getInstance().getReference(Common.driver_tbl);
         GeoFire gf = new GeoFire(driverLocation);
         GeoQuery geoQuery = gf.queryAtLocation(new GeoLocation(mLastLocation.getLatitude(),mLastLocation.getLongitude()),distance);
+
         geoQuery.removeAllListeners();
 
         geoQuery.addGeoQueryEventListener(new GeoQueryEventListener() {
             @Override
-            public void onKeyEntered(String key, GeoLocation location) {
+            public void onKeyEntered(String key, final GeoLocation location) {
                 //using key to get the driver
-                FirebaseDatabase.getInstance().getReference("Users")
+                FirebaseDatabase.getInstance().getReference(Common.user_driver_tbl)
                         .child(key)
                         .addListenerForSingleValueEvent(new ValueEventListener() {
                             @Override
@@ -296,6 +355,12 @@ public class home extends AppCompatActivity
                                 Victim victim = dataSnapshot.getValue(Victim.class);
 
                                 //adding the driver to map
+                                Toast.makeText(home.this, "found driver",Toast.LENGTH_LONG).show();
+                                mMap.addMarker(new MarkerOptions()
+                                    .position(new LatLng(location.latitude,location.longitude))
+                                    .flat(true)
+                                    . title(victim.getPhone())
+                                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.ambulance)));
 
                             }
 

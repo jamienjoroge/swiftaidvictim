@@ -20,6 +20,7 @@ import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.njoroge.jamie.swiftaidvictim.Common.Common;
 import com.njoroge.jamie.swiftaidvictim.Model.Victim;
 import com.rengwuxian.materialedittext.MaterialEditText;
 
@@ -57,7 +58,7 @@ public class MainActivity extends AppCompatActivity {
         //initialize Firebase
         auth = FirebaseAuth.getInstance();
         db = FirebaseDatabase.getInstance();
-        users = db.getReference("Victims");
+        users = db.getReference(Common.user_victim_tbl);
 
         //initialize view
         btnRegister = (Button) findViewById(R.id.btnRegister);
