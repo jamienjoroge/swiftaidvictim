@@ -1,7 +1,7 @@
 package com.njoroge.jamie.swiftaidvictim.Remote;
 
 import retrofit2.Retrofit;
-import retrofit2.converter.scalars.ScalarsConverterFactory;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 public class FCMClient {
     private static Retrofit retrofit = null;
@@ -12,7 +12,7 @@ public class FCMClient {
         {
             retrofit = new Retrofit.Builder()
                     .baseUrl(baseURL)
-                    .addConverterFactory(ScalarsConverterFactory.create())
+                    .addConverterFactory(GsonConverterFactory.create())
                     .build();
         }
         return retrofit;

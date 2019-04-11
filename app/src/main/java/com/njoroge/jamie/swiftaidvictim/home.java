@@ -45,6 +45,7 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.iid.FirebaseInstanceId;
 import com.google.gson.Gson;
 import com.njoroge.jamie.swiftaidvictim.Common.Common;
 import com.njoroge.jamie.swiftaidvictim.Helper.CustomInfoWindow;
@@ -150,7 +151,17 @@ public class home extends AppCompatActivity
         });
 
         setUpLocation();
+        updateFirebaseToken();
 
+    }
+
+    private void updateFirebaseToken() {
+        FirebaseDatabase db = FirebaseDatabase.getInstance();
+        DatabaseReference tokens =  db.getReference(Common.token_tbl);
+
+        Token token = new Token(FirebaseInstanceId.getInstance().getToken());
+        tokens.child(FirebaseAuth.getInstance().getCurrentUser().getUid())
+                .setValue(token);
     }
 
     private void sendRequestToDriver(String driverId) {
@@ -166,13 +177,13 @@ public class home extends AppCompatActivity
                             //making the payload this converts the LatLng to json
                             String json_lat_lng = new Gson().toJson(new LatLng(mLastLocation.getLatitude(),mLastLocation.getLongitude()));
                             Data data = new Data("Jamie", json_lat_lng);//>>sent to ambulance app
-                            Sender content = new Sender(data, token.getToken());//>>sending the data to token
+                            Sender content = new Sender(data, token != null ? token.getToken() : null);//>>sending the data to token
 
-                            mService.sendMessage(sender)
+                            mService.sendMessage(content)
                                     .enqueue(new Callback<FCMResponse>() {
                                         @Override
                                         public void onResponse(Call<FCMResponse> call, Response<FCMResponse> response) {
-                                            if(response.body().success == 1)
+                                            if(response.body().success== 1)
                                                 Toast.makeText(home.this, "Request sent!", Toast.LENGTH_SHORT).show();
                                             else
                                                 Toast.makeText(home.this, "Failed", Toast.LENGTH_SHORT).show();
@@ -230,7 +241,7 @@ public class home extends AppCompatActivity
                     isDriverFound = true;
                     driverId = key;
                     btnPickupRequest.setText("CALL AMBULANCE");
-                    Toast.makeText(home.this, ""+ key, Toast.LENGTH_SHORT).show();
+//                    Toast.makeText(home.this, ""+ key, Toast.LENGTH_SHORT).show();
                 }
 
             }
